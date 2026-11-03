@@ -1,0 +1,23 @@
+# Python / tooling
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Run data: databases, agent folders, transcripts (can be GBs; may contain downloaded data)
+runs/
+
+# The hidden exam. Agents have internet access: if the events or the ground truth were
+# public, they could find the answers online. Kept out until the experiment is over.
+exam/events/
+exam/truth/
+exam/raw/
+
+# Secrets
+services/searxng/settings.yml
+*.key
+.env
+
+# Machine-specific files: anything named *.local.* stays on this machine
+*.local.*
+!*.local.example.*

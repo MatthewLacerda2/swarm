@@ -1,0 +1,8 @@
+[Unit]
+Description=Swarm exam sandboxes (low priority)
+
+[Slice]
+MemoryMax=5G
+MemorySwapMax=0
+CPUWeight=20
+TasksMax=1024

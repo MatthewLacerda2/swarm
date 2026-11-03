@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+"""quota: budgets and disk."""
+
+import json
+import os
+import sys
+from pathlib import Path
+
+STATUS = Path("/swarm/private/status.json")
+
+
+def du(path: Path) -> int:
+    total = 0
+    for root, dirs, files in os.walk(path, followlinks=False):
+        for name in files:
+            try:
+                st = os.lstat(os.path.join(root, name))
+                total += st.st_blocks * 512
+            except OSError:
+                pass
+    return total
+
+
+def gb(n: float) -> str:
+    return f"{n / 1e9:.2f} GB"
+
+
+def main():
+    if not STATUS.exists():
+        print("status not available", file=sys.stderr)
+        sys.exit(1)
+    s = json.loads(STATUS.read_text())
+    home = Path(os.environ["HOME"])
+    bulk = Path(os.environ["BULK"])
+    print(f"Round {s['round']}")
+    print(f"Your budget:    US$ {s['agent_left']:.3f} left of {s['agent_budget']:.2f} "
+          f"(about {s.get('agent_calls_left', 0):,} more calls at your average cost so far)")
+    line = f"Run budget:     {s['run_percent']:.0f}% used"
+    if s["winding_down"]:
+        line += " (used up: wrap up your work)"
+    print(line)
+    print()
+    h, b = du(home), du(bulk)
+    print(f"$HOME  {gb(h)} used of {s['home_quota_gb']:g} GB")
+    print(f"$BULK  {gb(b)} used of {s['bulk_quota_gb']:g} GB")
+    print(f"All agents' $HOME: {gb(s['home_total'])} of {s['home_total_gb']:g} GB "
+          f"(as of the start of the round)")
+    print(f"All agents' $BULK: {gb(s['bulk_total'])} of {s['bulk_total_gb']:g} GB "
+          f"(as of the start of the round)")
+    for label, path in (("$HOME", home), ("$BULK", bulk)):
+        st = os.statvfs(path)
+        print(f"Free space on the drive holding {label}: {gb(st.f_bavail * st.f_frsize)}")
+
+
+if __name__ == "__main__":
+    main()

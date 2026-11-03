@@ -1,0 +1,4 @@
+# Copy to config.local.toml (gitignored) for machine-specific settings.
+
+# Where agents' $BULK folders live (big datasets). Default: ~/swarm-bulk
+# bulk_root = "/mnt/bigdrive/swarm-bulk"

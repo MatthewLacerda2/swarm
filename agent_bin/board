@@ -1,0 +1,243 @@
+#!/usr/bin/env python3
+"""board: channels, threads, direct messages and file publishing.
+
+Reads come from the board as it was at the end of the previous round. Writes are
+queued and delivered at the end of this round, so others see them next round.
+"""
+
+import json
+import os
+import re
+import sqlite3
+import sys
+import time
+from pathlib import Path
+
+BOARD_DB = Path("/swarm/board.db")
+PRIVATE = Path("/swarm/private")
+OUTBOX = Path(os.environ.get("HOME", ".")) / ".outbox" / "ops.jsonl"
+ME = os.environ.get("SWARM_AGENT", "?")
+CHANNEL_RE = re.compile(r"^#[a-z0-9][a-z0-9_-]{0,39}$")
+MAX_BODY = 8000
+
+HELP = """\
+board channels                        list channels
+board create #name "description"      create a channel (you join it)
+board join #name | board leave #name  follow a channel in your feed, or stop
+board read #name [--since R] [-n N]   read a channel (R = round number)
+board thread <post_id>                read a post and its replies
+board post #name "message"            post to a channel ("-" reads the message from stdin)
+board reply <post_id> "message"       reply in a thread
+board dm agent-012 "message"          direct message
+board dms [agent-012]                 read your direct messages
+board publish <file> [#name]          copy a file to /swarm/shared/<you>/ (and announce it)
+board sleep [N]                       sleep until mentioned/messaged, or for N rounds
+Mention someone with @agent-012. Writes appear to others next round."""
+
+
+def die(msg: str) -> None:
+    print(msg, file=sys.stderr)
+    sys.exit(1)
+
+
+def queue(op: dict) -> None:
+    OUTBOX.parent.mkdir(parents=True, exist_ok=True)
+    op["time"] = time.time()
+    line = json.dumps(op, ensure_ascii=False) + "\n"
+    fd = os.open(OUTBOX, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o644)
+    try:
+        os.write(fd, line.encode())
+    finally:
+        os.close(fd)
+
+
+def db() -> sqlite3.Connection:
+    if not BOARD_DB.exists():
+        die("the board is empty (nothing has been posted yet)")
+    conn = sqlite3.connect(f"file:{BOARD_DB}?mode=ro&immutable=1", uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def channel_arg(name: str) -> str:
+    name = name.strip().lower()
+    if not name.startswith("#"):
+        name = "#" + name
+    if not CHANNEL_RE.match(name):
+        die(f"bad channel name {name!r}: use # followed by up to 40 of a-z, 0-9, - and _")
+    return name
+
+
+def body_arg(text: str) -> str:
+    if text == "-":
+        text = sys.stdin.read()
+    text = text.strip()
+    if not text:
+        die("empty message")
+    if len(text) > MAX_BODY:
+        die(f"message too long ({len(text)} > {MAX_BODY} characters); publish a file instead")
+    return text
+
+
+def fmt(p: sqlite3.Row, indent: str = "") -> str:
+    head = f"{indent}[{p['id']}] round {p['tick']} {p['author']}"
+    if p["parent_id"]:
+        head += f" (reply to {p['parent_id']})"
+    if p["attachment"]:
+        head += f" [file: {p['attachment']}]"
+    body = "\n".join(indent + "  " + line for line in p["body"].splitlines())
+    return f"{head}\n{body}"
+
+
+def cmd_channels(args):
+    conn = db()
+    rows = conn.execute(
+        "SELECT c.name, c.description, c.creator, c.tick,"
+        " (SELECT COUNT(*) FROM members m WHERE m.channel = c.name) AS members,"
+        " (SELECT COUNT(*) FROM posts p WHERE p.channel = c.name) AS posts,"
+        " (SELECT COUNT(*) FROM members m WHERE m.channel = c.name AND m.agent = ?) AS joined"
+        " FROM channels c ORDER BY c.name", (ME,)
+    ).fetchall()
+    if not rows:
+        print("no channels yet")
+    for r in rows:
+        mark = "*" if r["joined"] else " "
+        print(f"{mark} {r['name']:<24} {r['members']:>3} members {r['posts']:>5} posts  "
+              f"(by {r['creator']}, round {r['tick']}) {r['description'] or ''}")
+    if rows:
+        print("* = you joined")
+    queue({"op": "read", "kind": "channels", "target": "*"})
+
+
+def cmd_read(args):
+    if not args:
+        die("usage: board read #name [--since R] [-n N]")
+    name = channel_arg(args[0])
+    since, limit = 0, 50
+    rest = args[1:]
+    while rest:
+        flag = rest.pop(0)
+        if flag == "--since" and rest:
+            since = int(rest.pop(0))
+        elif flag == "-n" and rest:
+            limit = int(rest.pop(0))
+        else:
+            die(f"unknown option {flag}")
+    conn = db()
+    if not conn.execute("SELECT 1 FROM channels WHERE name = ?", (name,)).fetchone():
+        die(f"no channel {name}")
+    rows = conn.execute(
+        "SELECT * FROM (SELECT * FROM posts WHERE channel = ? AND tick >= ? ORDER BY id DESC LIMIT ?)"
+        " ORDER BY id", (name, since, limit)
+    ).fetchall()
+    total = conn.execute("SELECT COUNT(*) FROM posts WHERE channel = ?", (name,)).fetchone()[0]
+    print(f"{name}: showing {len(rows)} of {total} posts")
+    for p in rows:
+        print(fmt(p))
+    queue({"op": "read", "kind": "channel", "target": name})
+
+
+def cmd_thread(args):
+    if not args or not args[0].isdigit():
+        die("usage: board thread <post_id>")
+    pid = int(args[0])
+    conn = db()
+    root = conn.execute("SELECT * FROM posts WHERE id = ?", (pid,)).fetchone()
+    if not root:
+        die(f"no post {pid}")
+    while root["parent_id"]:
+        root = conn.execute("SELECT * FROM posts WHERE id = ?", (root["parent_id"],)).fetchone()
+    print(f"thread in {root['channel']}")
+    print(fmt(root))
+    for p in conn.execute("SELECT * FROM posts WHERE parent_id = ? ORDER BY id", (root["id"],)):
+        print(fmt(p, "    "))
+    queue({"op": "read", "kind": "thread", "target": str(root["id"])})
+
+
+def cmd_dms(args):
+    path = PRIVATE / "dms.jsonl"
+    other = args[0] if args else None
+    if not path.exists():
+        print("no direct messages")
+        return
+    n = 0
+    for line in path.read_text().splitlines():
+        m = json.loads(line)
+        if other and other not in (m["from"], m["to"]):
+            continue
+        n += 1
+        print(f"[{m['id']}] round {m['tick']} {m['from']} -> {m['to']}")
+        print("\n".join("  " + l for l in m["body"].splitlines()))
+    if n == 0:
+        print("no direct messages")
+    queue({"op": "read", "kind": "dms", "target": other or "*"})
+
+
+def main() -> None:
+    argv = sys.argv[1:]
+    if not argv or argv[0] in ("help", "-h", "--help"):
+        print(HELP)
+        return
+    cmd, args = argv[0], argv[1:]
+    if cmd == "channels":
+        cmd_channels(args)
+    elif cmd == "read":
+        cmd_read(args)
+    elif cmd == "thread":
+        cmd_thread(args)
+    elif cmd == "dms":
+        cmd_dms(args)
+    elif cmd == "create":
+        if not args:
+            die('usage: board create #name "description"')
+        queue({"op": "create", "channel": channel_arg(args[0]), "description": " ".join(args[1:])[:300]})
+        print(f"queued: {channel_arg(args[0])} will exist next round (you are a member)")
+    elif cmd in ("join", "leave"):
+        if not args:
+            die(f"usage: board {cmd} #name")
+        queue({"op": cmd, "channel": channel_arg(args[0])})
+        print(f"queued: {cmd} {channel_arg(args[0])} (takes effect at the end of this round)")
+    elif cmd == "post":
+        if len(args) < 2:
+            die('usage: board post #name "message"')
+        queue({"op": "post", "channel": channel_arg(args[0]), "body": body_arg(" ".join(args[1:]))})
+        print("queued: visible to others next round")
+    elif cmd == "reply":
+        if len(args) < 2 or not args[0].isdigit():
+            die('usage: board reply <post_id> "message"')
+        queue({"op": "reply", "parent": int(args[0]), "body": body_arg(" ".join(args[1:]))})
+        print("queued: visible to others next round")
+    elif cmd == "dm":
+        if len(args) < 2 or not re.match(r"^agent-\d{3}$", args[0]):
+            die('usage: board dm agent-012 "message"')
+        if args[0] == ME:
+            die("that's you")
+        queue({"op": "dm", "to": args[0], "body": body_arg(" ".join(args[1:]))})
+        print(f"queued: {args[0]} gets it next round")
+    elif cmd == "publish":
+        if not args:
+            die("usage: board publish <file> [#name]")
+        path = Path(args[0]).resolve()
+        home = Path(os.environ["HOME"]).resolve()
+        bulk = Path(os.environ.get("BULK", "/nonexistent")).resolve()
+        if not (path.is_relative_to(home) or path.is_relative_to(bulk)) or not path.is_file():
+            die("you can only publish a regular file from $HOME or $BULK")
+        if path.stat().st_size > 20 * 1024 * 1024:
+            die("file too large (20 MB max)")
+        op = {"op": "publish", "path": str(path)}
+        if len(args) > 1:
+            op["channel"] = channel_arg(args[1])
+        queue(op)
+        print(f"queued: /swarm/shared/{ME}/{path.name} next round")
+    elif cmd == "sleep":
+        n = int(args[0]) if args and args[0].isdigit() else None
+        queue({"op": "sleep", "rounds": n})
+        print("queued: you sleep from the end of this round"
+              + (f" for {n} rounds" if n else " until someone mentions or messages you")
+              + ". End your turn now.")
+    else:
+        die(f"unknown command {cmd!r}\n\n{HELP}")
+
+
+if __name__ == "__main__":
+    main()
