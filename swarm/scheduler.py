@@ -40,7 +40,8 @@ def _budget_notices(run: Run, tick: int) -> None:
             run.db.set_meta("winddown_noticed", True)
             run.db.notice(tick, "budget",
                           "The run's budget is used up (100%). Wrap up: push your work and leave notes for "
-                          "others. No new agents can be created.")
+                          "others. No new agents can be created. The run stops for good when spending "
+                          f"reaches US$ {run.cfg.hard_stop:.2f}.")
             run.db.event(tick, None, "wind_down", {"spent": run.budget.spent})
     else:
         run.db.notice(tick, "budget", f"Run budget: {top}% used.")

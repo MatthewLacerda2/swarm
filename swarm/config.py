@@ -1,8 +1,7 @@
 """Paths and run values.
 
 Everything an agent may learn about its limits lives in RunConfig and is rendered
-into the seed prompt. The hard stop is the one exception: it is read from
-~/.config/swarm/limits.toml, which the sandbox hides.
+into the seed prompt, the hard stop included.
 """
 
 from __future__ import annotations
@@ -26,7 +25,6 @@ BULK_ROOT = Path(os.environ.get("SWARM_BULK_ROOT", LOCAL.get("bulk_root", str(Pa
 
 SECRETS_DIR = Path.home() / ".config" / "swarm"
 API_KEY_FILE = SECRETS_DIR / "anthropic.key"
-LIMITS_FILE = SECRETS_DIR / "limits.toml"
 
 UV_BINARY = Path.home() / ".local" / "bin" / "uv"
 
@@ -45,15 +43,17 @@ PRICE_OUTPUT = 0.50
 LONG_PROMPT_THRESHOLD = 100_000
 LONG_PROMPT_MULTIPLIER = 5
 
-BUDGET_THRESHOLDS = (20, 40, 60, 80, 85, 90, 95, 96, 97, 98, 99, 100)
+BUDGET_THRESHOLDS = (60, 80, 85, 90, 95, 96, 97, 98, 99, 100)
 
 
 @dataclass
 class RunConfig:
     run_id: str
     seed: int = 0
-    # Budgets (US$). run_budget is what agents are told.
+    # Budgets (US$). At run_budget the wind-down starts; at run_budget x hard_stop_ratio
+    # the run stops. Agents are told both.
     run_budget: float = 18.0
+    hard_stop_ratio: float = 22 / 18
     agent_budget: float = 1.50
     # Population
     initial_agents: int = 6
@@ -93,6 +93,10 @@ class RunConfig:
     extra: dict = field(default_factory=dict)
 
     @property
+    def hard_stop(self) -> float:
+        return round(self.run_budget * self.hard_stop_ratio, 2)
+
+    @property
     def run_dir(self) -> Path:
         return RUNS / self.run_id
 
@@ -102,22 +106,6 @@ class RunConfig:
 
     def to_dict(self) -> dict:
         return asdict(self)
-
-
-@dataclass
-class HiddenLimits:
-    """Never rendered anywhere an agent can see."""
-
-    hard_stop: float = 22.0
-
-
-def load_hidden_limits(run_budget: float) -> HiddenLimits:
-    """Hard stop = run budget x ratio (22/18 unless limits.toml says otherwise)."""
-    ratio = 22 / 18
-    if LIMITS_FILE.exists():
-        data = tomllib.loads(LIMITS_FILE.read_text())
-        ratio = float(data.get("hard_stop_ratio", ratio))
-    return HiddenLimits(hard_stop=round(run_budget * ratio, 2))
 
 
 def read_api_key() -> str:

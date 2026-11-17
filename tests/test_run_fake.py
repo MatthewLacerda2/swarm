@@ -12,7 +12,7 @@ import uuid
 
 import pytest
 
-from swarm import config, gitops, llm, scheduler
+from swarm import config, gitops, llm, prompts, scheduler
 from swarm import run as runmod
 
 _ids = itertools.count()
@@ -180,10 +180,11 @@ async def test_hard_stop_and_wind_down(fake_run):
     b = run.budget
     # pretend most of the money is gone
     b.spent = run.cfg.run_budget * 0.995
-    b.db.set_meta("thresholds_noticed", [20, 40, 60, 80, 85, 90, 95, 96, 97, 98, 99])
+    b.db.set_meta("thresholds_noticed", [60, 80, 85, 90, 95, 96, 97, 98, 99])
     await scheduler.run_ticks(run, max_new_ticks=1)
     assert b.spent >= run.cfg.run_budget
-    assert run.db.one("SELECT 1 FROM notices WHERE text LIKE 'The run''s budget is used up%'")
+    notice = run.db.one("SELECT text FROM notices WHERE text LIKE 'The run''s budget is used up%'")
+    assert f"US$ {run.cfg.hard_stop:.2f}" in notice["text"]
 
     b.spent = b.hard_stop - 1e-6
     reason = await scheduler.run_ticks(run, max_new_ticks=3)
@@ -216,7 +217,7 @@ async def test_budget_reservation():
             self.meta[k] = v
 
     cfg = config.RunConfig(run_id="x", run_budget=18, agent_budget=100)
-    b = llm.Budget(DummyDB(), cfg, hard_stop=22)
+    b = llm.Budget(DummyDB(), cfg)
     r1 = await b.reserve("a", 21.0)
     assert isinstance(r1, llm.Reservation)
     assert await b.reserve("b", 1.5) == "hard_stop"
@@ -278,3 +279,11 @@ async def test_tick_end_attacks():
             assert marker not in row["text"]
     finally:
         runmod.delete_run(cfg)
+
+
+def test_prompt_tells_the_hard_stop():
+    cfg = config.RunConfig(run_id="x")
+    assert cfg.hard_stop == 22.0
+    assert config.RunConfig(run_id="x", run_budget=1.0).hard_stop == 1.22
+    assert "stops for good when spending reaches US$ 22.00" in prompts.system_prompt(cfg)
+    assert min(config.BUDGET_THRESHOLDS) == 60

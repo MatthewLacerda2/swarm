@@ -20,7 +20,7 @@ def render(run_id: str) -> str:
         return default if row is None else json.loads(row["value"])
 
     cfg = config.RunConfig(**meta("config"))
-    hard = config.load_hidden_limits(cfg.run_budget).hard_stop
+    hard = cfg.hard_stop
     spent = db.execute("SELECT COALESCE(SUM(cost), 0) FROM usage").fetchone()[0]
     out = []
     out.append(f"Run {run_id} ({cfg.task}) - status {meta('status')} - round {meta('tick', 0)}")

@@ -35,9 +35,11 @@ def main():
     print(f"Round {s['round']}")
     print(f"Your budget:    US$ {s['agent_left']:.3f} left of {s['agent_budget']:.2f} "
           f"(about {s.get('agent_calls_left', 0):,} more calls at your average cost so far)")
-    line = f"Run budget:     {s['run_percent']:.0f}% used"
+    line = f"Run budget:     {s['run_percent']:.0f}% used of US$ {s['run_budget']:.2f}"
     if s["winding_down"]:
-        line += " (used up: wrap up your work)"
+        line += f" (used up: wrap up your work; the run stops for good at US$ {s['hard_stop']:.2f})"
+    else:
+        line += f" (then a wind-down period; the run stops for good at US$ {s['hard_stop']:.2f})"
     print(line)
     print()
     h, b = du(home), du(bulk)

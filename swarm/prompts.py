@@ -45,6 +45,7 @@ def system_prompt(cfg: config.RunConfig) -> str:
         "sectors": ", ".join(truth.SECTORS),
         "sim_timeout_min": cfg.sim_timeout // 60,
         "agent_calls": int(round(cfg.agent_budget / TYPICAL_CALL_COST, -1)),
+        "hard_stop": cfg.hard_stop,
         "shock_format": SHOCK_FORMAT,
         "sample_shock": json.dumps(exam.SAMPLE_SHOCK, indent=2),
     }

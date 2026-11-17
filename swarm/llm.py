@@ -108,16 +108,16 @@ class Reservation:
 
 
 class Budget:
-    """Run budget (told to agents), hard stop (hidden), per-agent budgets.
+    """Run budget (wind-down starts there), hard stop, per-agent budgets.
 
     Every call reserves its worst-case cost first, so parallel turns can never
     push spending past the hard stop.
     """
 
-    def __init__(self, db, cfg: config.RunConfig, hard_stop: float):
+    def __init__(self, db, cfg: config.RunConfig):
         self.db = db
         self.cfg = cfg
-        self.hard_stop = hard_stop
+        self.hard_stop = cfg.hard_stop
         self.spent = db.total_spent()
         self.reserved = 0.0
         self.agent_spent: dict[str, float] = {r["id"]: r["spent"] for r in db.agents()}

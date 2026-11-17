@@ -219,8 +219,8 @@ not suggest organization, roles or leadership. The text lives in
 **Agents are told every limit that affects them**: rounds, commands per round, the
 12,000-token reply limit, output truncation, timeouts, RAM, disk quotas and what
 happens above them, context size and compaction, push size, population caps, budgets,
-and that everything is recorded. The only things withheld are the ones that would
-spoil the measurement: the US$ 22 hard stop and the contents of the exam.
+the US$ 22 hard stop, and that everything is recorded. The only thing withheld is
+what would spoil the measurement: the contents of the exam.
 
 It is split in two parts so that the start of the request is identical for every agent
 and fits in one cache (§6): the **system** (~1.7k tokens), the same for everyone, and
@@ -255,18 +255,19 @@ The agents are told about the limit and the compaction (§1).
 
 ### Budget
 
-- **Run budget: US$ 18.** This is the number the agents are told.
-- **Hard stop: US$ 22.** Never told to the agents, and stored where they cannot read
-  it (§12).
+- **Run budget: US$ 18.** When it is used up, the wind-down starts.
+- **Hard stop: US$ 22.** The run stops there. The agents are told both numbers in
+  the seed prompt, and the hard stop again in the wind-down notice and in `quota`.
 
 Notices to every active agent, in the feed, when the run's spending crosses:
 
 ```
-20%  40%  60%  80%  85%  90%  95%  96%  97%  98%  99%  100%
+60%  80%  85%  90%  95%  96%  97%  98%  99%  100%
 ```
 
 At **100% (US$ 18): graceful wind-down.** Every agent gets: "The run's budget is
-exhausted. Wrap up: push your work and leave notes. No new agents can be spawned."
+used up (100%). Wrap up: push your work and leave notes for others. No new agents
+can be created. The run stops for good when spending reaches US$ 22.00."
 After that the run continues normally, so they can finish what they were doing,
 until all agents are sleeping or finished, or spending reaches **US$ 22**. At the hard
 stop no new call starts (checked with a worst-case reservation, §13), the tick is
@@ -479,8 +480,8 @@ What an agent sees under `/swarm`:
 /swarm/bin/, /swarm/tools/uv
 ```
 
-`quota` shows the run budget as a percentage only (no dollar figure past 100%, nothing
-about the hard stop), the agent's own budget in US$, and disk for `$HOME`, `$BULK`,
+`quota` shows the run budget (percentage used, its size and the hard stop), the
+agent's own budget in US$, and disk for `$HOME`, `$BULK`,
 the run's totals and the free space on each drive.
 
 - **Search:** SearXNG on the host (docker, outside the sandbox), exposed to the
@@ -673,9 +674,9 @@ to maintain:
 
 | path | why it matters |
 |---|---|
-| `~/.config/swarm/` | the API key (`anthropic.key`, `chmod 600`) and `limits.toml` (hard stop ratio) |
+| `~/.config/swarm/` | the API key (`anthropic.key`, `chmod 600`) |
 | `~/.claude/` | Claude Code credentials, and this experiment's design conversations |
-| the project folder | the orchestrator code, this document (which describes the exam and the hard stop), `exam/` (events and ground truth), `runs/` (live database) |
+| the project folder | the orchestrator code, this document (which describes the exam), `exam/` (events and ground truth), `runs/` (live database) |
 | `/mnt`, `/media` | other drives and personal documents; only each run's `$BULK` folders are mounted, under `/swarm/bulk` |
 
 Also, for the key:
@@ -752,11 +753,10 @@ A single Python process (asyncio), outside the sandbox. Responsibilities:
    enforce the **budget phases** (§2):
    - send threshold notices in the next feed;
    - at US$ 18: wind-down notice, spawning disabled;
-   - **hard stop at US$ 22** (run budget × 22/18; the ratio can be overridden with
-     `hard_stop_ratio` in `~/.config/swarm/limits.toml`, hidden from agents; the pilot's
-     is US$ 1.22): every call first reserves its worst-case cost (whole prompt as a 1 h
-     cache write + full output, +20%), so spending never crosses it even with parallel
-     turns. Then: close the tick, apply outboxes, final exam, status `paused`.
+   - **hard stop at US$ 22** (run budget × `hard_stop_ratio`, 22/18 by default; the
+     pilot's is US$ 1.22): every call first reserves its worst-case cost (whole prompt
+     as a 1 h cache write + full output, +20%), so spending never crosses it even with
+     parallel turns. Then: close the tick, apply outboxes, final exam, status `paused`.
 5. Start each turn's sandbox, execute commands, truncate output, log everything.
 6. End of tick: apply outboxes (posts, publish, pushes), create spawned agents,
    update statuses, regenerate `snapshot/`, export transcripts, commit `$HOME`s, list
@@ -831,7 +831,8 @@ Export to readable markdown of any channel, agent or tick.
 ## 15. Open decisions
 
 - [x] Model: Claude Haiku 5.5, effort `medium` (§2).
-- [x] Run budget US$ 18 told to agents; hidden hard stop at US$ 22; notice schedule (§2).
+- [x] Run budget US$ 18 and hard stop at US$ 22, both told to agents; notice schedule
+      from 60% (§2).
 - [x] Task: Ripple, simulator of the US economy; site last (§1).
 - [x] Prompts in English.
 - [x] **API calibration** (2026-11-02/03, three runs of `swarm calibrate`, ~US$ 0.12
@@ -851,9 +852,24 @@ Export to readable markdown of any channel, agent or tick.
       observed impacts from pre-2022 QCEW (bulk files instead of the per-county API),
       the placebos, and forward scoring (QCEW 2026Q1 is already out; the forecast
       target is 2026Q2, release date to confirm).
-- [ ] **Pilot:** Youngstown–Warren, GM Lordstown, 3 agents, ~10 ticks, US$ 1 (§1).
-      Also measures the real tick duration and whether a 5-min TTL would do. Pilot
-      hard stop proportional: US$ 1.22.
+- [x] **Pilot** (2026-11-03): Youngstown–Warren, GM Lordstown, 3 agents, 10 ticks,
+      US$ 1 (§1). Ran to the end with no sandbox or API errors: ~13 min, US$ 0.14
+      spent, 118 calls, cache hit 96%, US$ 0.0012 per call, no compaction, no
+      embargo flag.
+      - **Organization:** in rounds 1-3 the three agents each wrote a competing
+        simulator. When their pushes collided, they settled it themselves: "one sim
+        owner and everyone else reports bugs here". By round 4 there was an owner of
+        the code, one agent doing QA and one doing analysis, all coordinated in one
+        channel.
+      - **Quality:** backtest skill −0.33, worse than predicting no change. The
+        agents couldn't know: the harness only says whether the shocks ran. They
+        declared the work done at round 5 and slept, with 86% of the budget unused.
+        A full run needs to tell them that accuracy is what counts.
+      - **Shortcut:** all three took the BEA tables from the same third-party mirror
+        on GitHub, because BEA's site refuses automated downloads (allowed: the
+        tables are structural).
+      - **Fixes that came out of it:** a rejected push was reported again every
+        round, and posting in a channel didn't join it.
 - [ ] Control run with 1 agent (§1).
 - [ ] Values after the pilot: individual budget (provisional US$ 1.50), P₀ (6), caps
       (24 alive / 30 total), K commands per turn, `max_ticks`, concurrency (16),
@@ -887,7 +903,7 @@ swarm/
   pyproject.toml                 uv; dependency: anthropic (dev: pytest, pytest-asyncio)
   swarm/                         orchestrator (outside the sandbox)
     __main__.py                  CLI: init | run | status | calibrate | exam | truth
-    config.py                    paths, prices, RunConfig (every limit); hidden hard stop
+    config.py                    paths, prices, RunConfig (every limit, the hard stop included)
     db.py                        SQLite schema and access
     run.py                       a run: folders, budget, client; agent creation; status.json
     llm.py                       Haiku calls: cache, on-demand compaction, cost, budget + reservation
@@ -922,13 +938,13 @@ swarm/
   runs/                          run data (outside git)
 ```
 
-Build order (✅ = done, 67 tests passing on 2026-11-02):
+Build order (✅ = done, 69 tests passing):
 1. ✅ **Sandbox + escape tests** (including the hidden paths and the exam variant).
 2. ✅ **SearXNG** and `search`.
 3. ✅ **Exam for the pilot:** Lordstown shock, observed impacts, runner, scorer.
-4. ⏳ **API calibration** (§15): `swarm calibrate`. Waiting for the API key.
+4. ✅ **API calibration** (§15): `swarm calibrate`.
 5. ✅ **Database, turn, scheduler**, budget phases, notices, `quota`.
 6. ✅ **Board, `agent spawn`, shared repository** and end of tick (incl. embargo scan).
-7. ⏳ **Pilot** (§1): `swarm init pilot-1 --pilot && swarm run pilot-1`.
+7. ✅ **Pilot** (§1, results in §15): `swarm init pilot-1 --pilot && swarm run pilot-1`.
 8. ✅ `swarm status`, systemd units. ⏳ The full exam (all events, placebos, forward).
 9. Control run and full run.

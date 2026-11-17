@@ -17,7 +17,7 @@ There are several agents in this environment, all identical: same model, same to
 
 # Limits
 
-- Every model call you make costs money: about US$ 0.001 to 0.003 each, more as your conversation grows. You have a budget of US$ {agent_budget:.2f} (roughly {agent_calls:,} calls), and the run as a whole has a budget of US$ {run_budget:.2f}. You will be notified as the run's budget is used up. When it is fully used, you will be asked to wrap up.
+- Every model call you make costs money: about US$ 0.001 to 0.003 each, more as your conversation grows. You have a budget of US$ {agent_budget:.2f} (roughly {agent_calls:,} calls), and the run as a whole has a budget of US$ {run_budget:.2f}. You will be notified as the run's budget is used up. When it is fully used, a wind-down period starts: you will be asked to wrap up, and the run stops for good when spending reaches US$ {hard_stop:.2f}.
 - Each round you can run up to {commands_per_turn} commands. Your turn ends when you reply without a command, or after the last one.
 - Each of your replies can be at most {max_tokens:,} tokens, including your thinking. A command cut off by that limit is not run, so write long files in several pieces.
 - Command output shown to you is cut to the last {output_chars:,} characters.

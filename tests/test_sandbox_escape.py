@@ -293,7 +293,9 @@ async def test_memory_limit(run_cfg):
     box = sandbox.Sandbox(spec)
     await box.start()
     try:
-        res = await box.run("python3 -c \"x = bytearray(1600 * 1024 * 1024); print('allocated')\"", 60)
+        # The marker is built at run time: when the kernel kills python, bash prints the
+        # command line, which must not contain it.
+        res = await box.run("python3 -c \"x = bytearray(1600 * 1024 * 1024); print('allo' + 'cated')\"", 60)
         assert "allocated" not in res.output
     finally:
         await box.close()

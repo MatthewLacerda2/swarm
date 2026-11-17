@@ -101,8 +101,7 @@ def open_run(cfg: config.RunConfig, client: llm.LLM) -> Run:
         db.set_meta("config", cfg.to_dict())
     else:
         cfg = config.RunConfig(**stored)
-    hidden = config.load_hidden_limits(cfg.run_budget)
-    budget = llm.Budget(db, cfg, hidden.hard_stop)
+    budget = llm.Budget(db, cfg)
     run = Run(
         cfg=cfg, db=db, budget=budget, llm=client,
         system=llm.system_blocks(prompts.system_prompt(cfg)),
@@ -158,7 +157,9 @@ def write_status(run: Run, agent: str, tick: int) -> None:
         "agent_budget": cfg.agent_budget,
         "agent_left": left,
         "agent_calls_left": calls_left(run, agent, left),
-        "run_percent": min(100.0, run.budget.percent),
+        "run_budget": cfg.run_budget,
+        "run_percent": run.budget.percent,
+        "hard_stop": cfg.hard_stop,
         "winding_down": run.budget.winding_down,
         "home_quota_gb": cfg.home_quota_gb,
         "bulk_quota_gb": cfg.bulk_quota_gb,
