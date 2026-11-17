@@ -135,10 +135,18 @@ class PushResult:
     old: str | None = None
     new: str | None = None
     commits: list[str] | None = None
+    pushed: str | None = None   # the commit in the agent's outbox
 
 
-def land(central: Path, staging: Path, agent: str, tick: int, limit_bytes: int) -> list[PushResult]:
-    """Bring every branch of an agent's staging repo into the central repo."""
+def land(central: Path, staging: Path, agent: str, tick: int, limit_bytes: int,
+         seen: dict[str, str] | None = None) -> list[PushResult]:
+    """Bring every branch of an agent's staging repo into the central repo.
+
+    `seen` maps branch -> the outbox commit already processed in an earlier round; a
+    branch whose outbox commit hasn't changed is skipped, so a rejected push isn't
+    rejected (and reported) again every round.
+    """
+    seen = seen or {}
     ns = f"refs/incoming/{agent}"
     git("-c", "fetch.fsckObjects=true", "fetch", "-q", "--no-tags", "--no-write-fetch-head",
         str(staging), f"+refs/heads/*:{ns}/*", git_dir=central)
@@ -147,7 +155,13 @@ def land(central: Path, staging: Path, agent: str, tick: int, limit_bytes: int) 
     try:
         for ref in refs:
             branch = ref[len(ns) + 1:]
-            results.append(_land_branch(central, ref, branch, agent, tick, limit_bytes))
+            pushed = rev(central, ref)
+            if pushed is not None and seen.get(branch) == pushed:
+                results.append(PushResult(branch, "unchanged", new=pushed, commits=[]))
+                continue
+            r = _land_branch(central, ref, branch, agent, tick, limit_bytes)
+            r.pushed = pushed
+            results.append(r)
     finally:
         for ref in refs:
             git("update-ref", "-d", ref, git_dir=central, check=False)

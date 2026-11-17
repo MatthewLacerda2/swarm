@@ -183,6 +183,8 @@ def _post(run: Run, tick: int, agent: str, channel: str, parent: int | None, bod
         (channel, agent, tick, parent, body, attachment),
     )
     post_id = cur.lastrowid
+    # Like Slack: posting in a channel makes you a member, so replies show in your feed.
+    run.db.execute("INSERT OR IGNORE INTO members(channel, agent, tick) VALUES(?, ?, ?)", (channel, agent, tick))
     for mentioned in set(AGENT_RE.findall(body)):
         if mentioned != agent and run.db.one("SELECT 1 FROM agents WHERE id = ?", (mentioned,)):
             run.db.execute("INSERT INTO mentions(post_id, agent) VALUES(?, ?)", (post_id, mentioned))
@@ -231,12 +233,17 @@ def _land_pushes(run: Run, tick: int, agent: str) -> None:
                       f"Make sure $HOME/.outbox/push.git is a valid bare repository. ({err[:300]})", agent)
         return
     try:
+        seen = run.db.get_meta(f"outbox_seen:{agent}", {})
         results = gitops.land(run.paths.central, run.paths.staging(agent), agent, tick,
-                              run.cfg.push_limit_mb * 1024 * 1024)
+                              run.cfg.push_limit_mb * 1024 * 1024, seen)
     except gitops.GitError as e:
         run.db.event(tick, agent, "land_failed", str(e)[:2000])
         run.db.notice(tick, "git", "Your pushes could not be processed this round.", agent)
         return
+    for r in results:
+        if r.pushed:
+            seen[r.branch] = r.pushed
+    run.db.set_meta(f"outbox_seen:{agent}", seen)
     for r in results:
         if r.result == "unchanged":
             continue

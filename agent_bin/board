@@ -26,7 +26,7 @@ board create #name "description"      create a channel (you join it)
 board join #name | board leave #name  follow a channel in your feed, or stop
 board read #name [--since R] [-n N]   read a channel (R = round number)
 board thread <post_id>                read a post and its replies
-board post #name "message"            post to a channel ("-" reads the message from stdin)
+board post #name "message"            post to a channel, and join it ("-" reads the message from stdin)
 board reply <post_id> "message"       reply in a thread
 board dm agent-012 "message"          direct message
 board dms [agent-012]                 read your direct messages

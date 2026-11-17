@@ -39,12 +39,12 @@ def commit(work: Path, name: str, text: str, msg: str = "c"):
     sh("git", "push", "-q", "origin", "HEAD:main", cwd=work)
 
 
-def land(tmp, central, clones, agent, limit=50_000_000):
+def land(tmp, central, clones, agent, limit=50_000_000, seen=None):
     home, outbox, _ = clones[agent]
     staging = tmp / "staging" / f"{agent}.git"
     ok, err = gitops.sandboxed_fetch(outbox, staging, home)
     assert ok, err
-    return {r.branch: r for r in gitops.land(central, staging, agent, 1, limit)}
+    return {r.branch: r for r in gitops.land(central, staging, agent, 1, limit, seen)}
 
 
 def test_ff_then_clean_merge_then_conflict(repos):
@@ -103,3 +103,14 @@ def test_hostile_outbox_config_does_not_run(repos, tmp_path):
     commit(work, "x.txt", "x\n")
     assert land(tmp, central, clones, "a1")["main"].result == "ff"
     assert not canary.exists()
+
+
+def test_rejected_push_not_reported_again(repos):
+    tmp, central, clones = repos
+    for agent, text in (("a1", "from a1\n"), ("a2", "from a2\n")):
+        commit(clones[agent][2], "README.md", text)
+    land(tmp, central, clones, "a1")
+    first = land(tmp, central, clones, "a2")["main"]
+    assert first.result == "rejected"
+    again = land(tmp, central, clones, "a2", seen={"main": first.pushed})["main"]
+    assert again.result == "unchanged"
