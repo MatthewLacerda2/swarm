@@ -947,4 +947,5 @@ Build order (✅ = done, 69 tests passing):
 6. ✅ **Board, `agent spawn`, shared repository** and end of tick (incl. embargo scan).
 7. ✅ **Pilot** (§1, results in §15): `swarm init pilot-1 --pilot && swarm run pilot-1`.
 8. ✅ `swarm status`, systemd units. ⏳ The full exam (all events, placebos, forward).
-9. Control run and full run.
+9. Control run and full run: never done. The project was archived after the pilot
+   (see the note in README.md).

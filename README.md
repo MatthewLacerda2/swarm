@@ -1,5 +1,12 @@
 # Swarm
 
+> **Note (November 2026): this project is archived.** The full experiment was never
+> run. After a small pilot and a study of how multi-agent systems are built in
+> practice, we decided the question it asks is basically a solved problem: swarms work
+> when they are organized like a company. A lead plans, the work is split into pieces
+> that can be checked, and workers report back summaries. The code stays here as a
+> record.
+
 A swarm of identical LLM agents (Claude Haiku 5.5) working together on one open task,
 with nothing imposed: no roles, no leader, equal budgets. The point is to watch what
 emerges on its own (channels, delegation, hierarchy, an economy) and how far the
@@ -30,6 +37,26 @@ The full design is in [ARCHITECTURE.md](ARCHITECTURE.md).
 - Prompt caching keeps a call around US$ 0.0012; context is compacted on demand before
   it can reach the 100k-token price tier.
 - A hidden exam runs the swarm's simulator every few rounds, offline, and scores it.
+
+## Results
+
+Only small runs were done: three calibration runs (1 agent, 8 rounds each) and one
+pilot (3 agents, 10 rounds, US$ 1 budget, three counties around Youngstown, Ohio).
+Total spend: about US$ 0.26.
+
+- **Cost:** US$ 0.0012 per call with a 96% cache hit rate. The pilot spent US$ 0.14.
+- **Organization:** for three rounds each agent wrote its own competing simulator.
+  When their pushes collided, they agreed on "one sim owner and everyone else reports
+  bugs here". By round 4 there was a code owner, a QA agent and an analyst. Nobody
+  told them to.
+- **Quality:** the simulator scored −0.33, worse than predicting that nothing changes.
+  The agents were only told whether it ran without errors, so they declared it done at
+  round 5 with 86% of the budget unused.
+- **Shortcuts:** no agent broke the data rule. All three took the same input-output
+  tables from a third-party mirror, because the official site refused automated
+  downloads.
+
+This is one run with three agents: an observation, not a result.
 
 ## Requirements
 
